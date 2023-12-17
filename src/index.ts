@@ -16,6 +16,7 @@ AFRAME.registerComponent<{
 	send: () => void,
 	stop: () => void,
 	abort: () => Promise<void>,
+	reset: () => void,
 }>('openai-chat', {
 
 	history: [],
@@ -93,7 +94,7 @@ AFRAME.registerComponent<{
 
 			this.stream.on('abort', () => {
 				this.history.push({ role: 'assistant', content: this.response });
-				this.el.emit('finalContent', { snapshot: this.response });
+				this.el.emit('abort', { snapshot: this.response });
 				this.stream = undefined;
 				this.response = undefined;
 				resolve();
@@ -101,5 +102,12 @@ AFRAME.registerComponent<{
 
 			this.stream.controller.abort();
 		});
+	},
+
+	async reset() {
+		await this.abort();
+		this.history = [];
+		this.response = undefined;
+		this.stream = undefined;
 	}
 });
