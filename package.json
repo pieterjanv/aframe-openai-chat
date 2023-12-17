@@ -1,0 +1,25 @@
+{
+  "name": "aframe-openai-chat",
+  "version": "1.0.0",
+  "description": "Component that allows any entity to embody one of openai's AIs.",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "aframe",
+    "a-frame",
+    "openai",
+    "vr",
+    "ar"
+  ],
+  "author": "P.J. Visser",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/aframe": "^1.2.5",
+    "aframe": "^1.5.0"
+  },
+  "dependencies": {
+    "openai": "^4.23.0"
+  }
+}
