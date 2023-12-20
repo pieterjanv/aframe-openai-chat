@@ -2,8 +2,9 @@
   "name": "aframe-openai-chat",
   "version": "1.0.0",
   "description": "Component that allows any entity to embody one of openai's AIs.",
-  "main": "src/index.js",
+  "main": "dist/index.js",
   "scripts": {
+    "build": "node build.mjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -17,9 +18,8 @@
   "license": "ISC",
   "devDependencies": {
     "@types/aframe": "^1.2.5",
-    "aframe": "^1.5.0"
-  },
-  "dependencies": {
+    "aframe": "^1.5.0",
+    "esbuild": "^0.19.9",
     "openai": "^4.23.0"
   }
 }
