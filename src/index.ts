@@ -41,13 +41,13 @@ AFRAME.registerComponent<{
 	cancelListener: () => void,
 	send: () => Promise<void>,
 	processChunkPart: (
-		phase: ParseChunkPartPhase,
+		phase: ParseChunkPhase,
 		fragment: ArrayBuffer,
 		buffer: ArrayBuffer,
 		offset: number,
 		length: number,
 		callback: (chunkPart: ArrayBuffer) => void,
-	) => { fragment: ArrayBuffer, phase: ParseChunkPartPhase, bytesRead: number },
+	) => { fragment: ArrayBuffer, phase: ParseChunkPhase, bytesRead: number },
 	addChunkPart: (
 		oldFragment: ArrayBuffer,
 		buffer: ArrayBuffer,
@@ -192,7 +192,7 @@ AFRAME.registerComponent<{
 			return;
 		}
 
-		let phase: ParseChunkPartPhase = ParseChunkPartPhase.queryLength;
+		let phase: ParseChunkPhase = ParseChunkPhase.queryLength;
 		let fragment: ArrayBuffer = new ArrayBuffer(0);
 		let queryLength = 0;
 		let responseTextLength = 0;
@@ -225,12 +225,12 @@ AFRAME.registerComponent<{
 
 			while (bytesRead < byteLength && Date.now() - start < 1000) {
 				switch (phase) {
-					case ParseChunkPartPhase.queryLength:
+					case ParseChunkPhase.queryLength:
 						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, 4, (chunkPart) => {
 							queryLength = (new Uint32Array(chunkPart))[0];
 						}));
 						break;
-					case ParseChunkPartPhase.query:
+					case ParseChunkPhase.query:
 						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, queryLength, (chunkPart) => {
 							query = new TextDecoder().decode(chunkPart);
 							const userMessage = { role: 'user' as const, content: query, name: this.data.senderName };
@@ -238,39 +238,37 @@ AFRAME.registerComponent<{
 							this.el.emit('user-message', userMessage);
 						}));
 						break;
-					case ParseChunkPartPhase.responseTextLength:
+					case ParseChunkPhase.responseTextLength:
 						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, 4, (chunkPart) => {
 							responseTextLength = (new Uint32Array(chunkPart))[0];
 						}));
 						break;
-					case ParseChunkPartPhase.responseText:
+					case ParseChunkPhase.responseText:
 						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, responseTextLength, (chunkPart) => {
 							responseText = new TextDecoder().decode(chunkPart);
 							assistantMessageText += responseText;
 						}));
 						break;
-					case ParseChunkPartPhase.responseAudioLength:
+					case ParseChunkPhase.responseAudioLength:
 						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, 4, (chunkPart) => {
 							responseAudioLength = (new Uint32Array(chunkPart))[0];
 						}));
 						break;
-					case ParseChunkPartPhase.responseAudio:
+					case ParseChunkPhase.responseAudio:
 						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, responseAudioLength, (chunkPart) => {
 							responseAudioParts.push(new Uint8Array(chunkPart));
+							this.log('queueing audio')
+							const file = new File(responseAudioParts, 'response.opus', { type: 'audio/opus' });
+							const url = URL.createObjectURL(file);
+							this.el.emit('assistant-audio-part', url);
+							responseAudioFileUrls.push(url);
+							isQueueReady = true;
 						}));
 						break;
 				}
 			}
 
 			this.log('finished on phase', phase);
-			if (phase === ParseChunkPartPhase.queryLength) {
-				this.log('queueing audio')
-				const file = new File(responseAudioParts, 'response.opus', { type: 'audio/opus' });
-				const url = URL.createObjectURL(file);
-				this.el.emit('assistant-audio-part', url);
-				responseAudioFileUrls.push(url);
-				isQueueReady = true;
-			}
 
 			read();
 		}
@@ -291,6 +289,7 @@ AFRAME.registerComponent<{
 				return;
 			}
 
+			this.log('setting audio file');
 			this.output.setAttribute('src', url);
 			this.output.addEventListener('sound-ended', queueAudioFile);
 		};
@@ -308,13 +307,13 @@ AFRAME.registerComponent<{
 	},
 
 	processChunkPart(
-		phase: ParseChunkPartPhase,
+		phase: ParseChunkPhase,
 		fragment: ArrayBuffer,
 		buffer: ArrayBuffer,
 		offset: number,
 		length: number,
 		callback: (chunkPart: ArrayBuffer) => void,
-	): { fragment: ArrayBuffer, phase: ParseChunkPartPhase, bytesRead: number } {
+	): { fragment: ArrayBuffer, phase: ParseChunkPhase, bytesRead: number } {
 		this.log('phase', phase);
 		const { chunkPart, remainder } = this.addChunkPart(fragment, buffer, offset, length);
 		this.log('chunkPart length', chunkPart.byteLength);
@@ -325,7 +324,7 @@ AFRAME.registerComponent<{
 			return { fragment, phase, bytesRead };
 		}
 		callback(chunkPart);
-		phase = (phase + 1) % parseChunkPartPhaseLength;
+		phase = (phase + 1) % parseChunkPhaseLength;
 		return { fragment, phase, bytesRead }
 	},
 
@@ -359,7 +358,7 @@ AFRAME.registerComponent<{
 	},
 });
 
-enum ParseChunkPartPhase {
+enum ParseChunkPhase {
 	queryLength = 0,
 	query = 1,
 	responseTextLength = 2,
@@ -368,4 +367,4 @@ enum ParseChunkPartPhase {
 	responseAudio = 5,
 }
 
-const parseChunkPartPhaseLength = (Object.values(ParseChunkPartPhase).reduce((a, b) => isNaN(Number(b)) ? a + 1 : a, 0));
+const parseChunkPhaseLength = (Object.values(ParseChunkPhase).reduce((a, b) => isNaN(Number(b)) ? a + 1 : a, 0));
