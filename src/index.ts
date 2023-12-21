@@ -2,11 +2,12 @@ import type { ChatCompletionAssistantMessageParam, ChatCompletionSystemMessagePa
 import { Recorder } from "./Recorder";
 import { Entity } from "aframe";
 
-type Chat = Array<
+type ChatMessage =
 	| ChatCompletionSystemMessageParam
 	| ChatCompletionUserMessageParam
-	| ChatCompletionAssistantMessageParam
->;
+	| ChatCompletionAssistantMessageParam;
+
+type Chat = Array<ChatMessage>;
 
 enum TtsVoice {
 	alloy = 'alloy',
@@ -20,26 +21,24 @@ enum TtsVoice {
 const defaultVoice = TtsVoice.nova;
 
 type Body = {
-	speakerName?: string,
 	sttModel?: string,
 	chatModel?: string,
 	ttsModel?: string,
 	voice?: TtsVoice,
 	chat: Chat,
 	audio: string,
+	speakerName?: string,
 };
 
 AFRAME.registerComponent<{
-	chatStatusIndicator: Entity,
 	history: Chat,
 	audioMessage: string,
-	hovered: boolean,
+	isListening: boolean,
 	recording: boolean,
 	recorder: Recorder,
 	output: Entity,
 	actionListener: () => Promise<void>,
 	cancelListener: () => void,
-	updateStatusIndicator: () => void,
 	send: () => Promise<void>,
 	processChunkPart: (
 		phase: ParseChunkPartPhase,
@@ -61,26 +60,29 @@ AFRAME.registerComponent<{
 }>('openai-chat', {
 
 	schema: {
-		controller: { type: 'selector' },
-		camera: { type: 'selector' },
+		actionEvent: { type: 'string' },
+		cancelEvent: { type: 'string' },
+		systemPrompt: { type: 'string', default: 'You are a helpful assistant. You are embodied in a virtual reality, and receive queries from other inhabitants. Keep your answers short, suitable for a spoken conversation.' },
+		name: { type: 'string', default: 'openai-chat' },
+		voice: { type: 'string', default: defaultVoice },
+		senderName: { type: 'string', default: 'user' },
+		historyContainer: { type: 'selector' },
+		isMuted: { type: 'boolean', default: false },
+		useCursor: { type: 'boolean', default: false },
+		startListeningEvent: { type: 'string' },
+		stopListeningEvent: { type: 'string' },
 		endpoint: { type: 'string', default: 'http://localhost:8001/voice' },
 		sttModel: { type: 'string', default: 'whisper-1' },
 		chatModel: { type: 'string', default: 'gpt-3.5-turbo' },
 		ttsModel: { type: 'string', default: 'tts-1' },
-		voice: { type: 'string', default: defaultVoice },
-		systemPrompt: { type: 'string', default: 'You are a helpful assistant. You are embodied in a virtual reality, and receive queries from other inhabitants. Keep your answers short, suitable for a spoken conversation.' },
-		name: { type: 'string', default: 'openai-chat' },
-		sender: { type: 'string', default: 'user' },
 		debug: { type: 'boolean', default: false },
 	},
-
-	chatStatusIndicator: document.createElement('a-sphere'),
 
 	history: [],
 
 	audioMessage: '',
 
-	hovered: false,
+	isListening: false,
 
 	recording: false,
 
@@ -90,42 +92,47 @@ AFRAME.registerComponent<{
 
 	init() {
 
-		if (!this.data.controller || !this.data.camera) {
-			console.error('openai-chat requires a controller and camera');
-			return;
+		if (this.data.historyContainer) {
+			this.data.historyContainer.openAiChatHistory ??= [];
+			this.history = this.data.historyContainer.openAiChatHistory;
 		}
 
-		this.history.push({ role: 'system', content: this.data.systemPrompt });
+		if (!this.history.length) {
+			this.history.push({ role: 'system', content: this.data.systemPrompt });
+		}
 
-		this.output.addEventListener('sound-loaded', () => {
-			this.log('sound loaded');
-			(this.output.components.sound as any).playSound();
-		})
-		this.el.appendChild(this.output);
+		if (!this.data.isMuted) {
+			this.output.addEventListener('sound-loaded', () => {
+				this.log('sound loaded');
+				(this.output.components.sound as any).playSound();
+			})
+			this.el.appendChild(this.output);
+		}
 
-		this.chatStatusIndicator.setAttribute('radius', .01);
-		this.updateStatusIndicator();
-		this.chatStatusIndicator.setAttribute('position', { x: 0, y: 0, z: -0.5 });
-		this.data.camera.appendChild(this.chatStatusIndicator);
-		this.el.addEventListener('mouseenter', () => {
-			this.hovered = true;
-			this.updateStatusIndicator();
+		if (this.data.useCursor) {
+			this.el.addEventListener('mouseenter', () => {
+				this.el.emit(this.data.startListeningEvent);
+			});
+			this.el.addEventListener('mouseleave', () => {
+				this.el.emit(this.data.stopListeningEvent);
+			});
+		}
+
+		this.el.addEventListener(this.data.startListeningEvent, () => {
+			this.el.emit('start-listening');
+			this.isListening = true;
 		});
-		this.el.addEventListener('mouseleave', () => {
-			this.hovered = false;
-			this.updateStatusIndicator();
+		this.el.addEventListener(this.data.stopListeningEvent, () => {
+			this.el.emit('stop-listening');
+			this.isListening = false;
 		});
-
-		const controllerHand = this.data.controller.components['oculus-touch-controls'].data.hand;
-		const actionButton = controllerHand === 'left' ? 'xbutton' : 'abutton';
-		const cancelButton = controllerHand === 'left' ? 'ybutton' : 'bbutton';
 
 		this.actionListener = this.actionListener.bind(this);
-		this.data.controller.addEventListener(`${actionButton}up`, this.actionListener);
+		this.el.addEventListener(this.data.actionEvent, this.actionListener);
 		this.el.addEventListener('click', this.actionListener);
 
 		this.cancelListener = this.cancelListener.bind(this);
-		this.data.controller.addEventListener(`${cancelButton}up`, this.cancelListener);
+		this.el.addEventListener(this.data.cancelevent, this.cancelListener);
 	},
 
 	async actionListener(): Promise<void> {
@@ -134,7 +141,6 @@ AFRAME.registerComponent<{
 		if (this.recording) {
 			const blob = await this.recorder.stop();
 			this.recording = false;
-			this.updateStatusIndicator();
 			this.el.emit('stop-recording');
 			this.audioMessage = await this.toBase64(blob);
 			this.send();
@@ -142,41 +148,48 @@ AFRAME.registerComponent<{
 			return;
 		}
 
-		if (!this.hovered) {
+		if (!this.isListening) {
 			return;
 		}
 
 		this.log('start recording');
 		await this.recorder.start();
 		this.recording = true;
-		this.updateStatusIndicator();
 		this.el.emit('start-recording');
 	},
 
 	async cancelListener(): Promise<void> {
 		this.log('cancel button clicked');
-		if (this.recording) {
-			await this.recorder.stop();
-			this.recording = false;
-			this.updateStatusIndicator();
-			this.el.emit('stop-recording');
-			this.el.emit('cancel-recording');
-		}
-	},
-
-	updateStatusIndicator() {
-		if (this.recording) {
-			this.chatStatusIndicator?.setAttribute('color', 'red');
+		if (!this.recording) {
 			return;
 		}
-		this.chatStatusIndicator?.setAttribute('color', this.hovered ? 'lightgreen' : 'white');
+		await this.recorder.stop();
+		this.recording = false;
+		this.el.emit('stop-recording');
+		this.el.emit('cancel-recording');
 	},
 
 	async send() {
 
+		const historyCopy: Chat = [];
+		for (const message of this.history) {
+			if (message.role === 'assistant' && message.name !== this.data.name) {
+				historyCopy.push({ role: 'user' as const, content: message.content ?? '', name: message.name });
+				continue;
+			};
+			historyCopy.push(message);
+		}
+		historyCopy[0] = { role: 'system', content: this.data.systemPrompt };
+		this.log('sending adapted chat history', historyCopy);
+
 		const body: Body = {
-			chat: this.history,
+			chat: historyCopy,
 			audio: this.audioMessage,
+			chatModel: this.data.chatModel,
+			sttModel: this.data.sttModel,
+			ttsModel: this.data.ttsModel,
+			voice: this.data.voice,
+			speakerName: this.data.senderName,
 		};
 
 		const response = await fetch(this.data.endpoint, {
@@ -197,6 +210,7 @@ AFRAME.registerComponent<{
 		const responseAudioFileUrls: string[] = [];
 		let isQueueReady = false;
 		let isQueueComplete = false;
+		let assistantMessageText = '';
 		const reader = response.body.getReader();
 
 		const read = async () => {
@@ -204,6 +218,10 @@ AFRAME.registerComponent<{
 			const { value, done } = await reader.read();
 
 			if (done) {
+				const assistantMessage = { role: 'assistant' as const, content: assistantMessageText, name: this.data.name };
+				this.history.push(assistantMessage);
+				this.log('history', this.history);
+				this.el.emit('assistant-message', assistantMessage);
 				isQueueComplete = true;
 				return;
 			}
@@ -215,7 +233,7 @@ AFRAME.registerComponent<{
 			let responseText = '';
 			const start = Date.now();
 
-			while (bytesRead < byteLength && Date.now() - start < 60 * 1000) {
+			while (bytesRead < byteLength && Date.now() - start < 1000) {
 				switch (phase) {
 					case ParseChunkPartPhase.queryLength:
 						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, 2, (chunkPart) => {
@@ -225,6 +243,9 @@ AFRAME.registerComponent<{
 					case ParseChunkPartPhase.query:
 						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, queryLength, (chunkPart) => {
 							query = new TextDecoder().decode(chunkPart);
+							const userMessage = { role: 'user' as const, content: query, name: this.data.senderName };
+							this.history.push(userMessage);
+							this.el.emit('user-message', userMessage);
 						}));
 						break;
 					case ParseChunkPartPhase.responseTextLength:
@@ -235,6 +256,7 @@ AFRAME.registerComponent<{
 					case ParseChunkPartPhase.responseText:
 						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, responseTextLength, (chunkPart) => {
 							responseText = new TextDecoder().decode(chunkPart);
+							assistantMessageText += responseText;
 						}));
 						break;
 					case ParseChunkPartPhase.responseAudioLength:
@@ -254,7 +276,9 @@ AFRAME.registerComponent<{
 			if (phase === ParseChunkPartPhase.queryLength) {
 				this.log('queueing audio')
 				const file = new File(responseAudioParts, 'response.opus', { type: 'audio/opus' });
-				responseAudioFileUrls.push(URL.createObjectURL(file));
+				const url = URL.createObjectURL(file);
+				this.el.emit('assistant-audio-part', url);
+				responseAudioFileUrls.push(url);
 				isQueueReady = true;
 			}
 
@@ -262,6 +286,11 @@ AFRAME.registerComponent<{
 		}
 
 		const queueAudioFile = () => {
+
+			if (this.data.isMuted) {
+				return;
+			}
+
 			this.output.removeEventListener('sound-ended', queueAudioFile);
 			const url = responseAudioFileUrls.shift();
 			if (!url) {
@@ -270,6 +299,7 @@ AFRAME.registerComponent<{
 				}
 				return;
 			}
+
 			this.output.setAttribute('src', url);
 			this.output.addEventListener('sound-ended', queueAudioFile);
 		};
