@@ -132,7 +132,7 @@ AFRAME.registerComponent<{
 		this.el.addEventListener('click', this.actionListener);
 
 		this.cancelListener = this.cancelListener.bind(this);
-		this.el.addEventListener(this.data.cancelevent, this.cancelListener);
+		this.el.addEventListener(this.data.cancelEvent, this.cancelListener);
 	},
 
 	async actionListener(): Promise<void> {
