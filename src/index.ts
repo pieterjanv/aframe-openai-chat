@@ -1,6 +1,6 @@
 import type { ChatCompletionAssistantMessageParam, ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam } from "openai/resources/index.mjs";
 import { Recorder } from "./Recorder";
-import { Entity } from "aframe";
+import { Component, Entity } from "aframe";
 
 type ChatMessage =
 	| ChatCompletionSystemMessageParam
@@ -26,7 +26,7 @@ type Body = {
 	ttsModel?: string,
 	voice?: TtsVoice,
 	chat: Chat,
-	audio: string,
+	input: string,
 	speakerName?: string,
 };
 
@@ -36,7 +36,7 @@ AFRAME.registerComponent<{
 	isListening: boolean,
 	recording: boolean,
 	recorder: Recorder,
-	output: Entity,
+	output: Component | undefined,
 	actionListener: () => Promise<void>,
 	cancelListener: () => void,
 	send: () => Promise<void>,
@@ -87,7 +87,7 @@ AFRAME.registerComponent<{
 
 	recorder: new Recorder(),
 
-	output: document.createElement('a-sound'),
+	output: undefined,
 
 	init() {
 
@@ -101,11 +101,10 @@ AFRAME.registerComponent<{
 		}
 
 		if (!this.data.isMuted) {
-			this.output.addEventListener('sound-loaded', () => {
+			this.el.addEventListener('sound-loaded', () => {
 				this.log('sound loaded');
-				(this.output.components.sound as any).playSound();
+				(this.el.components.sound as any).playSound();
 			})
-			this.el.appendChild(this.output);
 		}
 
 		this.el.addEventListener(this.data.startListeningEvent, () => {
@@ -174,7 +173,7 @@ AFRAME.registerComponent<{
 
 		const body: Body = {
 			chat: historyCopy,
-			audio: this.audioMessage,
+			input: this.audioMessage,
 			chatModel: this.data.chatModel,
 			sttModel: this.data.sttModel,
 			ttsModel: this.data.ttsModel,
@@ -216,7 +215,6 @@ AFRAME.registerComponent<{
 				return;
 			}
 
-			const responseAudioParts: Uint8Array[] = [];
 			let byteLength = value.buffer.byteLength;
 			let bytesRead = 0;
 			let query = '';
@@ -256,9 +254,8 @@ AFRAME.registerComponent<{
 						break;
 					case ParseChunkPhase.responseAudio:
 						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, responseAudioLength, (chunkPart) => {
-							responseAudioParts.push(new Uint8Array(chunkPart));
 							this.log('queueing audio')
-							const file = new File(responseAudioParts, 'response.opus', { type: 'audio/opus' });
+							const file = new File([new Uint8Array(chunkPart)], 'response.opus', { type: 'audio/opus' });
 							const url = URL.createObjectURL(file);
 							this.el.emit('assistant-audio-part', url);
 							responseAudioFileUrls.push(url);
@@ -279,19 +276,20 @@ AFRAME.registerComponent<{
 				return;
 			}
 
-			this.output.removeEventListener('sound-ended', queueAudioFile);
+			this.el.removeEventListener('sound-ended', queueAudioFile);
 			const url = responseAudioFileUrls.shift();
 			if (!url) {
 				if (!isQueueComplete) {
 					setTimeout(queueAudioFile, 50);
+					return;
 				}
 				this.el.emit('response-audio-ended');
 				return;
 			}
 
 			this.log('setting audio file');
-			this.output.setAttribute('src', url);
-			this.output.addEventListener('sound-ended', queueAudioFile);
+			this.el.setAttribute('sound', { src: url });
+			this.el.addEventListener('sound-ended', queueAudioFile);
 		};
 
 		const startQueue = setInterval(() => {
