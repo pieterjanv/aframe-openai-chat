@@ -297,6 +297,7 @@ AFRAME.registerComponent<{
 				if (!isQueueComplete) {
 					setTimeout(queueAudioFile, 50);
 				}
+				this.el.emit('response-audio-ended');
 				return;
 			}
 
