@@ -68,7 +68,6 @@ AFRAME.registerComponent<{
 		senderName: { type: 'string', default: 'user' },
 		historyContainer: { type: 'selector' },
 		isMuted: { type: 'boolean', default: false },
-		useCursor: { type: 'boolean', default: false },
 		startListeningEvent: { type: 'string' },
 		stopListeningEvent: { type: 'string' },
 		endpoint: { type: 'string', default: 'http://localhost:8001/voice' },
@@ -107,15 +106,6 @@ AFRAME.registerComponent<{
 				(this.output.components.sound as any).playSound();
 			})
 			this.el.appendChild(this.output);
-		}
-
-		if (this.data.useCursor) {
-			this.el.addEventListener('mouseenter', () => {
-				this.el.emit(this.data.startListeningEvent);
-			});
-			this.el.addEventListener('mouseleave', () => {
-				this.el.emit(this.data.stopListeningEvent);
-			});
 		}
 
 		this.el.addEventListener(this.data.startListeningEvent, () => {
@@ -236,8 +226,8 @@ AFRAME.registerComponent<{
 			while (bytesRead < byteLength && Date.now() - start < 1000) {
 				switch (phase) {
 					case ParseChunkPartPhase.queryLength:
-						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, 2, (chunkPart) => {
-							queryLength = (new Uint16Array(chunkPart))[0];
+						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, 4, (chunkPart) => {
+							queryLength = (new Uint32Array(chunkPart))[0];
 						}));
 						break;
 					case ParseChunkPartPhase.query:
@@ -249,8 +239,8 @@ AFRAME.registerComponent<{
 						}));
 						break;
 					case ParseChunkPartPhase.responseTextLength:
-						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, 2, (chunkPart) => {
-							responseTextLength = (new Uint16Array(chunkPart))[0];
+						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, 4, (chunkPart) => {
+							responseTextLength = (new Uint32Array(chunkPart))[0];
 						}));
 						break;
 					case ParseChunkPartPhase.responseText:
