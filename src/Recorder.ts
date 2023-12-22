@@ -4,16 +4,13 @@ export class Recorder {
 	private mediaRecorder: MediaRecorder | undefined = undefined;
 
 	async start(): Promise<void> {
-		navigator.mediaDevices.getUserMedia({ audio: true })
-			.then(stream => {
-				this.stream = stream;
-				const options = {
-					audioBitsPerSecond: 12800,
-					mimeType: 'audio/webm',
-				};
-				this.mediaRecorder = new MediaRecorder(stream, options);
-				this.mediaRecorder.start();
-			});
+		const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		this.stream = stream;
+		this.mediaRecorder = new MediaRecorder(stream, {
+			audioBitsPerSecond: 12800,
+			mimeType: 'audio/webm',
+		});
+		this.mediaRecorder.start();
 	}
 
 	toggle(): void {

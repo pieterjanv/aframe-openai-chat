@@ -1,6 +1,6 @@
 import type { ChatCompletionAssistantMessageParam, ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam } from "openai/resources/index.mjs";
 import { Recorder } from "./Recorder";
-import { Component, Entity } from "aframe";
+import { Component } from "aframe";
 
 type ChatMessage =
 	| ChatCompletionSystemMessageParam
@@ -48,7 +48,7 @@ AFRAME.registerComponent<{
 		length: number,
 		callback: (chunkPart: ArrayBuffer) => void,
 	) => { fragment: ArrayBuffer, phase: ParseChunkPhase, bytesRead: number },
-	addChunkPart: (
+	combineFragments: (
 		oldFragment: ArrayBuffer,
 		buffer: ArrayBuffer,
 		offset: number,
@@ -104,6 +104,7 @@ AFRAME.registerComponent<{
 			this.el.addEventListener('sound-loaded', () => {
 				this.log('sound loaded');
 				(this.el.components.sound as any).playSound();
+				this.el.emit('start-response-audio', undefined, true);
 			})
 		}
 
@@ -130,7 +131,7 @@ AFRAME.registerComponent<{
 		if (this.recording) {
 			const blob = await this.recorder.stop();
 			this.recording = false;
-			this.el.emit('stop-recording');
+			this.el.emit('stop-recording', undefined, true);
 			this.audioMessage = await this.toBase64(blob);
 			this.send();
 			this.el.emit('send-message');
@@ -144,7 +145,7 @@ AFRAME.registerComponent<{
 		this.log('start recording');
 		await this.recorder.start();
 		this.recording = true;
-		this.el.emit('start-recording');
+		this.el.emit('start-recording', undefined, true);
 	},
 
 	async cancelListener(): Promise<void> {
@@ -154,7 +155,7 @@ AFRAME.registerComponent<{
 		}
 		await this.recorder.stop();
 		this.recording = false;
-		this.el.emit('stop-recording');
+		this.el.emit('stop-recording', undefined, true);
 		this.el.emit('cancel-recording');
 	},
 
@@ -224,43 +225,85 @@ AFRAME.registerComponent<{
 			while (bytesRead < byteLength && Date.now() - start < 1000) {
 				switch (phase) {
 					case ParseChunkPhase.queryLength:
-						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, 4, (chunkPart) => {
-							queryLength = (new Uint32Array(chunkPart))[0];
-						}));
+						({ fragment, phase, bytesRead } = this.processChunkPart(
+							phase,
+							fragment,
+							value.buffer,
+							bytesRead,
+							4,
+							(chunkPart) => {
+								queryLength = (new Uint32Array(chunkPart))[0];
+							},
+						));
 						break;
 					case ParseChunkPhase.query:
-						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, queryLength, (chunkPart) => {
-							query = new TextDecoder().decode(chunkPart);
-							const userMessage = { role: 'user' as const, content: query, name: this.data.senderName };
-							this.history.push(userMessage);
-							this.el.emit('user-message', userMessage);
-						}));
+						({ fragment, phase, bytesRead } = this.processChunkPart(
+							phase,
+							fragment,
+							value.buffer,
+							bytesRead,
+							queryLength,
+							(chunkPart) => {
+								query = new TextDecoder().decode(chunkPart);
+								const userMessage = { role: 'user' as const, content: query, name: this.data.senderName };
+								this.history.push(userMessage);
+								this.el.emit('user-message', userMessage);
+							},
+						));
 						break;
 					case ParseChunkPhase.responseTextLength:
-						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, 4, (chunkPart) => {
-							responseTextLength = (new Uint32Array(chunkPart))[0];
-						}));
+						({ fragment, phase, bytesRead } = this.processChunkPart(
+							phase,
+							fragment,
+							value.buffer,
+							bytesRead,
+							4,
+							(chunkPart) => {
+								responseTextLength = (new Uint32Array(chunkPart))[0];
+							},
+						));
 						break;
 					case ParseChunkPhase.responseText:
-						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, responseTextLength, (chunkPart) => {
-							responseText = new TextDecoder().decode(chunkPart);
-							assistantMessageText += responseText;
-						}));
+						({ fragment, phase, bytesRead } = this.processChunkPart(
+							phase,
+							fragment,
+							value.buffer,
+							bytesRead,
+							responseTextLength,
+							(chunkPart) => {
+								responseText = new TextDecoder().decode(chunkPart);
+								assistantMessageText += responseText;
+							},
+						));
 						break;
 					case ParseChunkPhase.responseAudioLength:
-						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, 4, (chunkPart) => {
-							responseAudioLength = (new Uint32Array(chunkPart))[0];
-						}));
+						({ fragment, phase, bytesRead } = this.processChunkPart(
+							phase,
+							fragment,
+							value.buffer,
+							bytesRead,
+							4,
+							(chunkPart) => {
+								responseAudioLength = (new Uint32Array(chunkPart))[0];
+							},
+						));
 						break;
 					case ParseChunkPhase.responseAudio:
-						({ fragment, phase, bytesRead } = this.processChunkPart(phase, fragment, value.buffer, bytesRead, responseAudioLength, (chunkPart) => {
-							this.log('queueing audio')
-							const file = new File([new Uint8Array(chunkPart)], 'response.opus', { type: 'audio/opus' });
-							const url = URL.createObjectURL(file);
-							this.el.emit('assistant-audio-part', url);
-							responseAudioFileUrls.push(url);
-							isQueueReady = true;
-						}));
+						({ fragment, phase, bytesRead } = this.processChunkPart(
+							phase,
+							fragment,
+							value.buffer,
+							bytesRead,
+							responseAudioLength,
+							(chunkPart) => {
+								this.log('queueing audio')
+								const file = new File([new Uint8Array(chunkPart)], 'response.opus', { type: 'audio/opus' });
+								const url = URL.createObjectURL(file);
+								this.el.emit('assistant-audio-part', url);
+								responseAudioFileUrls.push(url);
+								isQueueReady = true;
+							},
+						));
 						break;
 				}
 			}
@@ -283,7 +326,7 @@ AFRAME.registerComponent<{
 					setTimeout(queueAudioFile, 50);
 					return;
 				}
-				this.el.emit('response-audio-ended');
+				this.el.emit('stop-response-audio', undefined, true);
 				return;
 			}
 
@@ -313,7 +356,7 @@ AFRAME.registerComponent<{
 		callback: (chunkPart: ArrayBuffer) => void,
 	): { fragment: ArrayBuffer, phase: ParseChunkPhase, bytesRead: number } {
 		this.log('phase', phase);
-		const { chunkPart, remainder } = this.addChunkPart(fragment, buffer, offset, length);
+		const { chunkPart, remainder } = this.combineFragments(fragment, buffer, offset, length);
 		this.log('chunkPart length', chunkPart.byteLength);
 		const bytesRead = offset + chunkPart.byteLength;
 		fragment = remainder > 0 ? chunkPart : new ArrayBuffer(0);
@@ -326,7 +369,7 @@ AFRAME.registerComponent<{
 		return { fragment, phase, bytesRead }
 	},
 
-	addChunkPart(oldFragment: ArrayBuffer, buffer: ArrayBuffer, offset: number, length: number) {
+	combineFragments(oldFragment: ArrayBuffer, buffer: ArrayBuffer, offset: number, length: number) {
 		const newFragment = buffer.slice(offset, offset + length - oldFragment.byteLength);
 		const chunkPart = new Uint8Array(oldFragment.byteLength + newFragment.byteLength);
 		chunkPart.set(new Uint8Array(oldFragment), 0);
