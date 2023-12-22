@@ -20,6 +20,7 @@
     "@types/aframe": "^1.2.5",
     "aframe": "^1.5.0",
     "esbuild": "^0.19.9",
-    "openai": "^4.23.0"
+    "openai": "^4.23.0",
+    "typescript": "^5.3.3"
   }
 }
