@@ -27,7 +27,9 @@ type Body = {
 	voice?: TtsVoice,
 	chat: Chat,
 	input: string,
+	inputFromat?: 'string',
 	speakerName?: string,
+	outputFormat?: 'opus' | 'mp3' | 'aac' | 'flac',
 };
 
 AFRAME.registerComponent<{
@@ -180,6 +182,7 @@ AFRAME.registerComponent<{
 			ttsModel: this.data.ttsModel,
 			voice: this.data.voice,
 			speakerName: this.data.senderName,
+			outputFormat: 'aac',
 		};
 
 		const response = await fetch(this.data.endpoint, {
@@ -297,7 +300,7 @@ AFRAME.registerComponent<{
 							responseAudioLength,
 							(chunkPart) => {
 								this.log('queueing audio')
-								const file = new File([new Uint8Array(chunkPart)], 'response.opus', { type: 'audio/opus' });
+								const file = new File([new Uint8Array(chunkPart)], 'response.aac', { type: 'audio/aac' });
 								const url = URL.createObjectURL(file);
 								this.el.emit('assistant-audio-part', url);
 								responseAudioFileUrls.push(url);
