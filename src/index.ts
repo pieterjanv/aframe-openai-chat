@@ -1,6 +1,6 @@
 import type { ChatCompletionAssistantMessageParam, ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam } from "openai/resources/index.mjs";
 import { Recorder } from "./Recorder";
-import { Component } from "aframe";
+import { DetailEvent } from "aframe";
 
 type ChatMessage =
 	| ChatCompletionSystemMessageParam
@@ -34,11 +34,15 @@ type Body = {
 
 AFRAME.registerComponent<{
 	history: Chat,
-	audioMessage: string,
+	isSomeoneResponding: boolean,
+	isToListen: boolean,
 	isListening: boolean,
-	recording: boolean,
+	isSomeoneListening: boolean,
+	audioMessage: string,
+	isRecording: boolean,
 	recorder: Recorder,
-	output: Component | undefined,
+	soundComponentId: string,
+	mouseDownPosition: { x: number, y: number },
 	actionListener: () => Promise<void>,
 	cancelListener: () => void,
 	send: () => Promise<void>,
@@ -64,15 +68,14 @@ AFRAME.registerComponent<{
 	schema: {
 		actionEvent: { type: 'string' },
 		cancelEvent: { type: 'string' },
+		startListeningEvent: { type: 'string' },
+		stopListeningEvent: { type: 'string' },
 		systemPrompt: { type: 'string', default: 'You are a helpful assistant. You are embodied in a virtual reality, and receive queries from other inhabitants. Keep your answers short, suitable for a spoken conversation.' },
-		name: { type: 'string', default: 'openai-chat' },
+		name: { type: 'string', default: 'assistant' },
 		voice: { type: 'string', default: defaultVoice },
 		senderName: { type: 'string', default: 'user' },
 		historyContainer: { type: 'selector' },
-		isMuted: { type: 'boolean', default: false },
-		startListeningEvent: { type: 'string' },
-		stopListeningEvent: { type: 'string' },
-		endpoint: { type: 'string', default: 'http://localhost:8001/voice' },
+		endpoint: { type: 'string', default: 'http://localhost:8000/voice' },
 		sttModel: { type: 'string', default: 'whisper-1' },
 		chatModel: { type: 'string', default: 'gpt-3.5-turbo' },
 		ttsModel: { type: 'string', default: 'tts-1' },
@@ -81,17 +84,29 @@ AFRAME.registerComponent<{
 
 	history: [],
 
-	audioMessage: '',
+	isSomeoneResponding: false,
+
+	isToListen: false,
 
 	isListening: false,
 
-	recording: false,
+	isSomeoneListening: false,
+
+	audioMessage: '',
+
+	isRecording: false,
 
 	recorder: new Recorder(),
 
-	output: undefined,
+	soundComponentId: 'openai-chat',
+
+	mouseDownPosition: { x: 0, y: 0 },
 
 	init() {
+
+		if (!this.data.actionEvent || !this.data.cancelEvent || !this.data.startListeningEvent || !this.data.stopListeningEvent) {
+			throw new Error('Missing event name');
+		}
 
 		if (this.data.historyContainer) {
 			this.data.historyContainer.openAiChatHistory ??= [];
@@ -102,41 +117,106 @@ AFRAME.registerComponent<{
 			this.history.push({ role: 'system', content: this.data.systemPrompt });
 		}
 
-		if (!this.data.isMuted) {
-			this.el.addEventListener('sound-loaded', () => {
-				this.log('sound loaded');
-				(this.el.components.sound as any).playSound();
-				this.el.emit('start-response-audio', undefined, true);
-			})
-		}
+		this.el.addEventListener('sound-loaded', (e) => {
+			if ((e as DetailEvent<{ id: string }>).detail.id !== this.soundComponentId) {
+				return;
+			}
+			this.log('sound loaded');
+			(this.el.components[`sound__${this.soundComponentId}`] as any).playSound();
+			this.el.emit('start-response-audio', { id: this.el.id }, true);
+		});
+
+		this.el.sceneEl!.addEventListener('stop-recording', () => {
+			this.isSomeoneResponding = true;
+		});
+
+		this.el.sceneEl!.addEventListener('cancel-recording', () => {
+			this.isSomeoneResponding = false;
+		});
+
+		this.el.sceneEl!.addEventListener('stop-response-audio', () => {
+			this.isSomeoneResponding = false;
+		});
+
+		this.el.sceneEl!.addEventListener('start-listening', () => {
+			this.isSomeoneListening = true;
+		});
+
+		this.el.sceneEl!.addEventListener('stop-listening', () => {
+			this.isSomeoneListening = false;
+		});
+
+		this.el.sceneEl!.addEventListener('stop-response-audio', () => {
+			if (!this.isToListen) {
+				return;
+			}
+			this.el.emit(this.data.startListeningEvent);
+		});
 
 		this.el.addEventListener(this.data.startListeningEvent, () => {
-			this.el.emit('start-listening');
+			this.isToListen = true;
+			if (this.isSomeoneListening) {
+				return;
+			}
+			this.log('start listening');
+			this.el.emit('start-listening', { id: this.el.id }, true);
 			this.isListening = true;
+			this.isSomeoneListening = true;
 		});
 		this.el.addEventListener(this.data.stopListeningEvent, () => {
-			this.el.emit('stop-listening');
+			this.isToListen = false;
+			if (!this.isListening || this.isRecording) {
+				return;
+			}
+			this.log('stop listening');
+			this.el.emit('stop-listening', { id: this.el.id }, true);
 			this.isListening = false;
+			this.isSomeoneListening = false;
 		});
 
 		this.actionListener = this.actionListener.bind(this);
 		this.el.addEventListener(this.data.actionEvent, this.actionListener);
-		this.el.addEventListener('click', this.actionListener);
+		this.el.sceneEl!.addEventListener('mousedown', (e) => {
+			if (!(e instanceof MouseEvent) || e.button !== 0) {
+				return;
+			}
+			const mouseEvent = e;
+			this.log('mouse down', e);
+			this.mouseDownPosition.x = mouseEvent.clientX;
+			this.mouseDownPosition.y = mouseEvent.clientY;
+		});
+		this.el.sceneEl!.addEventListener('mouseup', (e) => {
+			if (!(e instanceof MouseEvent) || e.button !== 0) {
+				return;
+			}
+			const mouseEvent = e;
+			this.log('mouse up', e);
+			if ((
+				(mouseEvent.clientX - this.mouseDownPosition.x) ** 2 +
+				(mouseEvent.clientY - this.mouseDownPosition.y) ** 2
+			) > 9) {
+				this.log('mouse dragged');
+				return;
+			}
+			this.log('mouse clicked');
+			this.actionListener();
+		});
 
 		this.cancelListener = this.cancelListener.bind(this);
 		this.el.addEventListener(this.data.cancelEvent, this.cancelListener);
 	},
 
 	async actionListener(): Promise<void> {
-
 		this.log('action button clicked');
-		if (this.recording) {
+		if (this.isRecording) {
+			this.log('stop recording');
 			const blob = await this.recorder.stop();
-			this.recording = false;
-			this.el.emit('stop-recording', undefined, true);
+			this.isRecording = false;
+			this.el.emit('stop-recording', { id: this.el.id }, true);
+			this.el.emit(this.data.stopListeningEvent);
 			this.audioMessage = await this.toBase64(blob);
 			this.send();
-			this.el.emit('send-message');
+			this.el.emit('send-message', { id: this.el.id }, true);
 			return;
 		}
 
@@ -146,19 +226,20 @@ AFRAME.registerComponent<{
 
 		this.log('start recording');
 		await this.recorder.start();
-		this.recording = true;
-		this.el.emit('start-recording', undefined, true);
+		this.isRecording = true;
+		this.el.emit('start-recording', { id: this.el.id }, true);
 	},
 
 	async cancelListener(): Promise<void> {
 		this.log('cancel button clicked');
-		if (!this.recording) {
+		if (!this.isRecording) {
 			return;
 		}
 		await this.recorder.stop();
-		this.recording = false;
-		this.el.emit('stop-recording', undefined, true);
-		this.el.emit('cancel-recording');
+		this.isRecording = false;
+		this.el.emit(this.data.stopListeningEvent);
+		this.el.emit('stop-recording', { id: this.el.id }, true);
+		this.el.emit('cancel-recording', { id: this.el.id }, true);
 	},
 
 	async send() {
@@ -318,10 +399,6 @@ AFRAME.registerComponent<{
 
 		const queueAudioFile = () => {
 
-			if (this.data.isMuted) {
-				return;
-			}
-
 			this.el.removeEventListener('sound-ended', queueAudioFile);
 			const url = responseAudioFileUrls.shift();
 			if (!url) {
@@ -329,12 +406,12 @@ AFRAME.registerComponent<{
 					setTimeout(queueAudioFile, 50);
 					return;
 				}
-				this.el.emit('stop-response-audio', undefined, true);
+				this.el.emit('stop-response-audio', { id: this.el.id }, true);
 				return;
 			}
 
 			this.log('setting audio file');
-			this.el.setAttribute('sound', { src: url });
+			this.el.setAttribute(`sound__${this.soundComponentId}`, { src: url });
 			this.el.addEventListener('sound-ended', queueAudioFile);
 		};
 

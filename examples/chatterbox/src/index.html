@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Chatterbox</title>
+		<script src="./index.js"></script>
+		<script>
+			AFRAME.registerComponent('copy-event', {
+
+				multiple: true,
+
+				schema: {
+					sourceEventTarget: { type: 'selector' },
+					sourceEventName: { type: 'string' },
+					targetEventName: { type: 'string' },
+					bubbles: { type: 'boolean', default: false },
+				},
+
+				init() {
+					const targetEventName = this.data.targetEventName || this.data.sourceEventName;
+					this.data.sourceEventTarget.addEventListener(this.data.sourceEventName, (e) => {
+						const newDetail = Object.assign({}, e.detail ?? {});
+						newDetail.sourceEl = this.data.sourceEventTarget;
+						this.el.emit(targetEventName, newDetail, this.data.bubbles);
+					});
+				},
+			});
+		</script>
+		<script>
+			AFRAME.registerComponent('chat-status-indicator', {
+
+				schema: {
+					isRecording: { type: 'boolean', default: false },
+					isListening: { type: 'boolean', default: false },
+				},
+
+				chatStatusIndicator: document.createElement('a-sphere'),
+
+				init() {
+
+					const scene = document.querySelector('a-scene');
+					if (!scene) {
+						throw new Error('No scene found');
+					}
+					scene.addEventListener('start-listening', () => {
+						this.data.isListening = true;
+						this.updateStatusIndicator();
+					});
+					scene.addEventListener('stop-listening', () => {
+						this.data.isListening = false;
+						this.updateStatusIndicator();
+					});
+					scene.addEventListener('start-recording', () => {
+						this.data.isRecording = true;
+						this.updateStatusIndicator();
+					});
+					scene.addEventListener('stop-recording', () => {
+						this.data.isRecording = false;
+						this.updateStatusIndicator();
+					});
+
+					this.chatStatusIndicator.setAttribute('radius', .01);
+					this.updateStatusIndicator();
+					this.chatStatusIndicator.setAttribute('position', { x: 0, y: 0, z: -0.5 });
+					this.el.appendChild(this.chatStatusIndicator);
+				},
+
+				updateStatusIndicator() {
+					if (this.data.isRecording) {
+						this.chatStatusIndicator?.setAttribute('color', 'red');
+						return;
+					}
+					this.chatStatusIndicator?.setAttribute('color', this.data.isListening ? 'lightgreen' : 'white');
+				},
+			});
+		</script>
+	</head>
+	<body>
+		<a-scene id="scene" xr-mode-ui="XRMode: xr">
+			<a-assets>
+				<img id="groundTexture" crossorigin="anonymous" src="https://cdn.aframe.io/a-painter/images/floor.jpg">
+				<img id="skyTexture" crossorigin="anonymous" src="https://cdn.aframe.io/a-painter/images/sky.jpg">
+				<a-mixin id="teleport" blink-controls teleport></a-mixin>
+			</a-assets>
+			<a-entity id="cameraRig" position="0 0 0">
+				<a-entity
+					id="camera"
+					camera
+					wasd-controls
+					cursor
+					look-controls
+					raycaster="objects: [openai-chat]; far: 1000"
+					chat-status-indicator
+				>
+					<a-entity
+						position="0 0 -.5"
+						geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.0125"
+						material="color: black; shader: flat">
+					</a-entity>
+				</a-entity>
+				<!-- use your favorite controls -->
+				<a-entity
+					id="leftHand"
+					oculus-touch-controls="hand: left"
+				>
+				</a-entity>
+				<a-entity
+					id="rightHand"
+					oculus-touch-controls="hand: right"
+				></a-entity>
+			</a-entity>
+			<!-- Create an entity that can be chatted with -->
+			<a-box
+				openai-chat="
+					actionEvent: abuttonup;
+					cancelEvent: bbuttonup;
+					startListeningEvent: mouseenter;
+					stopListeningEvent: mouseleave;
+					systemPrompt: You are a visionary AR and VR developer, here to share how you see the exciting future of the technologies. You're especially excited about the combination of AI and XR technologies. You respond to queries with succinct answers.;
+					voice: alloy;
+					endpoint: http://localhost:8000/voice;
+					debug: true;
+				"
+				position="0 1.6 -1"
+				scale="0.25 0.25 0.25"
+				rotation="0 0 0"
+				color="blue"
+				copy-event__action="sourceEventTarget: #rightHand; sourceEventName: abuttonup"
+				copy-event__cancel="sourceEventTarget: #rightHand; sourceEventName: bbuttonup"
+			></a-box>
+			<a-cylinder id="ground" src="#groundTexture" radius="30" height="0.1"></a-cylinder>
+			<a-sky id="background" src="#skyTexture" theta-length="90" radius="30"></a-sky>
+		</a-scene>
+	</body>
+</html>

@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "node build.mjs",
+    "example": "cd examples/chatterbox && node build.mjs && cp src/index.html dist/index.html && npx http-server dist",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -20,6 +21,7 @@
     "@types/aframe": "^1.2.5",
     "aframe": "^1.5.0",
     "esbuild": "^0.19.9",
+    "http-server": "^14.1.1",
     "openai": "^4.23.0",
     "typescript": "^5.3.3"
   }
