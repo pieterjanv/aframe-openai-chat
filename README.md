@@ -30,6 +30,9 @@ This is a basic chat component for A-Frame, that, given an appropriate backend, 
 
 ## API
 
+
+### Schema
+
 | Property | Description | Default Value |
 | -------- | ----------- | ------------- |
 | actionEvent | The name of the event to listen for to start or stop recording. | none |
@@ -46,6 +49,33 @@ This is a basic chat component for A-Frame, that, given an appropriate backend, 
 | chatModel | The model to use for chat. | `'gpt-3.5-turbo'` |
 | ttsModel | The model to use for text-to-speech. | `'tts-1'` |
 | debug | Whether to log debug information to the console. | `false` |
+
+
+### Events
+
+All events bubble up to the scene element.
+
+| Name | Description | Event detail |
+| ---- | ----------- | ------------ |
+| `start-listening` | Fired when the component starts listening, which means the next action event will trigger a recording. | `ChatEventDetail` |
+| `stop-listening` | Fired when the component stops listening, which means the next action event will have no effect. | `ChatEventDetail` |
+| `start-recording` | Fired when the component starts recording. | `ChatEventDetail` |
+| `stop-recording` | Fired when the component stops recording. | `ChatEventDetail` |
+| `cancel-recording` | Fired when the component cancels recording. | `ChatEventDetail` |
+| `start-response-audio` | Fired when the response audio starts playing. | `ChatEventDetail` |
+| `stop-response-audio` | Fired when the response audio stops playing. | `ChatEventDetail` |
+| `send-query` | Fired when the component sends a message to the backend. | `ChatEventDetail` |
+| `query-text` | Fired when the query text is received. | `ChatEventDetail & { query: string }` |
+| `response-text` | Fired when the response text is received. | `ChatEventDetail & { response: string }` |
+| `response-audio-part` | Fired when a part of the response audio is received. The event detail is an object url to the audio file. | `ChatEventDetail & { audio: string }` |
+| `parsing-complete` | Fired when the response is fully received and parsed. | `ChatEventDetail` |
+
+
+#### ChatEventDetail
+
+| Property | Description |
+| -------- | ----------- |
+| `id` | The id of the entity element that fired the event. |
 
 
 ## Notes

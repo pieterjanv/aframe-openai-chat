@@ -62,6 +62,7 @@ AFRAME.registerComponent<{
 	) => { chunkPart: ArrayBuffer, remainder: number },
 	toBase64: (blob: Blob) => Promise<string>,
 	toDataUrl: (blob: Blob) => Promise<string>,
+	createEventDetail: <T extends Record<string, unknown>>(data: T) => { id: string } & T,
 	log: (...messages: unknown[]) => void,
 }>('openai-chat', {
 
@@ -123,7 +124,7 @@ AFRAME.registerComponent<{
 			}
 			this.log('sound loaded');
 			(this.el.components[`sound__${this.soundComponentId}`] as any).playSound();
-			this.el.emit('start-response-audio', { id: this.el.id }, true);
+			this.el.emit('start-response-audio', this.createEventDetail({}), true);
 		});
 
 		this.el.sceneEl!.addEventListener('stop-recording', () => {
@@ -159,7 +160,7 @@ AFRAME.registerComponent<{
 				return;
 			}
 			this.log('start listening');
-			this.el.emit('start-listening', { id: this.el.id }, true);
+			this.el.emit('start-listening', this.createEventDetail({}), true);
 			this.isListening = true;
 			this.isSomeoneListening = true;
 		});
@@ -169,7 +170,7 @@ AFRAME.registerComponent<{
 				return;
 			}
 			this.log('stop listening');
-			this.el.emit('stop-listening', { id: this.el.id }, true);
+			this.el.emit('stop-listening', this.createEventDetail({}), true);
 			this.isListening = false;
 			this.isSomeoneListening = false;
 		});
@@ -212,11 +213,11 @@ AFRAME.registerComponent<{
 			this.log('stop recording');
 			const blob = await this.recorder.stop();
 			this.isRecording = false;
-			this.el.emit('stop-recording', { id: this.el.id }, true);
+			this.el.emit('stop-recording', this.createEventDetail({}), true);
 			this.el.emit(this.data.stopListeningEvent);
 			this.audioMessage = await this.toBase64(blob);
 			this.send();
-			this.el.emit('send-message', { id: this.el.id }, true);
+			this.el.emit('send-query', this.createEventDetail({}), true);
 			return;
 		}
 
@@ -227,7 +228,7 @@ AFRAME.registerComponent<{
 		this.log('start recording');
 		await this.recorder.start();
 		this.isRecording = true;
-		this.el.emit('start-recording', { id: this.el.id }, true);
+		this.el.emit('start-recording', this.createEventDetail({}), true);
 	},
 
 	async cancelListener(): Promise<void> {
@@ -238,8 +239,8 @@ AFRAME.registerComponent<{
 		await this.recorder.stop();
 		this.isRecording = false;
 		this.el.emit(this.data.stopListeningEvent);
-		this.el.emit('stop-recording', { id: this.el.id }, true);
-		this.el.emit('cancel-recording', { id: this.el.id }, true);
+		this.el.emit('stop-recording', this.createEventDetail({}), true);
+		this.el.emit('cancel-recording', this.createEventDetail({}), true);
 	},
 
 	async send() {
@@ -295,7 +296,8 @@ AFRAME.registerComponent<{
 				const assistantMessage = { role: 'assistant' as const, content: assistantMessageText, name: this.data.name };
 				this.history.push(assistantMessage);
 				this.log('history', this.history);
-				this.el.emit('assistant-message', assistantMessage);
+				this.el.emit('response-text', this.createEventDetail({ response: assistantMessage }), true);
+				this.el.emit('parsing-complete', this.createEventDetail({}), true);
 				isQueueComplete = true;
 				return;
 			}
@@ -331,7 +333,7 @@ AFRAME.registerComponent<{
 								query = new TextDecoder().decode(chunkPart);
 								const userMessage = { role: 'user' as const, content: query, name: this.data.senderName };
 								this.history.push(userMessage);
-								this.el.emit('user-message', userMessage);
+								this.el.emit('query-text', this.createEventDetail({ query: userMessage }), true);
 							},
 						));
 						break;
@@ -383,7 +385,7 @@ AFRAME.registerComponent<{
 								this.log('queueing audio')
 								const file = new File([new Uint8Array(chunkPart)], 'response.aac', { type: 'audio/aac' });
 								const url = URL.createObjectURL(file);
-								this.el.emit('assistant-audio-part', url);
+								this.el.emit('response-audio-part', this.createEventDetail({ audio: url }), true);
 								responseAudioFileUrls.push(url);
 								isQueueReady = true;
 							},
@@ -406,7 +408,7 @@ AFRAME.registerComponent<{
 					setTimeout(queueAudioFile, 50);
 					return;
 				}
-				this.el.emit('stop-response-audio', { id: this.el.id }, true);
+				this.el.emit('stop-response-audio', this.createEventDetail({}), true);
 				return;
 			}
 
@@ -470,6 +472,10 @@ AFRAME.registerComponent<{
 			};
 			reader.readAsDataURL(blob);
 		});
+	},
+
+	createEventDetail<T extends Record<string, unknown>>(data: T) {
+		return { id: this.el.id, ...data };
 	},
 
 	log(...messages: unknown[]) {
