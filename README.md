@@ -1,6 +1,6 @@
 # Aframe OpenAI Chat Component
 
-This is a basic chat component for A-Frame, 3D / AR / VR framework that, given an appropriate backend, can be used to chat with any of OpenAI's models through an A-Frame entity.
+This is a basic chat component for A-Frame, the 3D / AR / VR framework, that, given an appropriate backend, can be used to chat with any of OpenAI's models through an A-Frame entity.
 
 A [live demonstration](https://www.youtube.com/watch?v=h9M0Rm1HoMc) has been uploaded to YouTube.
 
