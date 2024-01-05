@@ -18,7 +18,7 @@ A [live demonstration](https://www.youtube.com/watch?v=h9M0Rm1HoMc) has been upl
 2. Create a new A-Frame project and install this component as an NPM package by running `npm install git+https://github.com/pieterjanv/aframe-openai-chat.git`.
 3. Build your project using your favorite tool and include the resulting JavaScript file in your HTML file.
 3. Add the component to an entity in your scene. See the examples directory for an example, and the API section below for a description of the component's properties.
-4. Serve your project using a local webserver. Testing on a headset is not required, as you can interact with the AI using the mouse. Click once on a listening entity to start recording, click again to send the recording to the backend.
+4. Serve your project using a local webserver. Testing on a headset is not required, as you can interact with the AI using the mouse. Click once while an entity is listening to start recording, click again to send the recording to the backend.
 
 
 ## Demo
